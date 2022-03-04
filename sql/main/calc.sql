@@ -1,6 +1,8 @@
 insert into results
+--1.  Вывести максимальное количество человек в одном бронировании
 select 	1 id,(select max(cb) mb from (select book_ref, count(passenger_id) cb from bookings b join tickets t using(book_ref) group by book_ref) f)::text res
 union all
+--2.  Вывести количество бронирований с количеством людей больше среднего значения людей на одно бронирование
 select 2 id, (	select sum(cp)
 				from (
 						select cb,count(book_ref) cp, avg(cb) over () ab
@@ -16,6 +18,7 @@ select 2 id, (	select sum(cp)
 				where cb>ab
 				)::text res
 union all
+--3.  Вывести количество бронирований, у которых состав пассажиров повторялся два и более раза, среди бронирований с максимальным количество людей (п.1)?
 select 3 id, (with tt as (
 				select book_ref
 				from (
@@ -48,6 +51,7 @@ select 3 id, (with tt as (
 				group by a.book_ref
 				having count(1) >5) f)::text
 union all
+--4.  Вывести номера брони и контактную информацию по пассажирам в брони (passenger_id, passenger_name, contact_data) с количеством людей в брони = 3
 select * from (
 select 4 id, book_ref||'|'||passenger_id||'|'||passenger_name||'|'||contact_data res
 from (select 	book_ref,
@@ -61,6 +65,7 @@ from (select 	book_ref,
 where cp = 3
 order by book_ref,passenger_id, passenger_name, contact_data) r
 union all
+--5.  Вывести максимальное количество перелётов на бронь
 select 5 id, (select max(fl)
 				from (
 					select book_ref ,count(distinct flight_id) fl
@@ -72,6 +77,7 @@ select 5 id, (select max(fl)
 					group by book_ref
 				) f)::text res
 union all
+--6.  Вывести максимальное количество перелётов на пассажира в одной брони
 select 6 id, (select max(fl)
 from (
 	select book_ref,passenger_id,count(distinct flight_id) fl
@@ -83,6 +89,7 @@ from (
 	group by book_ref,passenger_id
 ) f)::text
 union all
+--7.  Вывести максимальное количество перелётов на пассажира
 select 7 id, (select max(fl)
 from (
 	select passenger_id,count(flight_id) fl
@@ -94,6 +101,8 @@ from (
 	group by passenger_id
 ) f)::text
 union all
+--8.  Вывести контактную информацию по пассажиру (passenger_id, passenger_name, contact_data) и общие траты на билеты,
+--для пассажира потратившему минимальное количество денег на перелеты
 select 8 id, passenger_id||'|'||passenger_name||'|'||contact_data||'|'||amt
 from (
 	select f.*, row_number() over (order by amt) rn
@@ -110,6 +119,8 @@ from (
 )s
 where rn = 1
 union all
+--9.  Вывести контактную информацию по пассажиру (passenger_id, passenger_name, contact_data) и общее время в полётах,
+--для пассажира, который провёл максимальное время в полётах
 select 9 id, passenger_id||'|'||passenger_name||'|'||contact_data||'|'||dur
 from (
 	select f.*, row_number() over (order by dur desc) rn
@@ -124,6 +135,7 @@ from (
 )s
 where rn = 1
 union all
+--10.  Вывести города с количеством аэропортов больше одного
 select * from (
 select 10 id,  city
 from (
@@ -133,6 +145,7 @@ from (
 	having count(1)>1
 ) f order by 2) d
 union all
+--11.  Вывести город, у которого самое меньшее количество городов прямого сообщения
 select * from (
 with tt as (
 select departure_city city, count( distinct arrival_city) count_city_out
@@ -143,6 +156,7 @@ from tt
 where count_city_out = (select min(count_city_out) from tt)
 order by 2) d
 union all
+--12.  Вывести пары городов, у которых нет прямых сообщений исключив реверсные дубликаты
 select * from (
 with tt as (
 select 	a.city::json->>'ru' city1,a.rn rn1, b.city::json->>'ru' city2,b.rn rn2
@@ -162,6 +176,7 @@ where r.departure_city is null and f.departure_city is null
 ) d
 order by 2) f
 union all
+--13.  Вывести города, до которых нельзя добраться без пересадок из Москвы?
 select * from (
 select distinct 13 id, r.arrival_city
 from routes r
@@ -169,17 +184,19 @@ left join (select arrival_city from routes where departure_city = 'Москва'
 where f.arrival_city is null and r.arrival_city != 'Москва'
 order by 2) f
 union all
+--14.  Вывести модель самолета, который выполнил больше всего рейсов
 select * from
 (with tt as (
 select model, count(1) cnt
 from flights_v fv
 join aircrafts a using(aircraft_code)
-where status != 'Cancelled'
+where status = 'Arrived'
 group by model)
 select 14 id, model
 from tt
 where cnt = (select max(cnt) from tt)) f
 union all
+--15.  Вывести модель самолета, который перевез больше всего пассажиров
 select * from
 (with tt as (
 select model, count(passenger_id) cnt
@@ -187,36 +204,42 @@ from flights_v fv
 join aircrafts a using(aircraft_code)
 join ticket_flights tf using(flight_id)
 join tickets tf2 using(ticket_no)
-where status != 'Cancelled'
+where status = 'Arrived'
 group by model)
 select 15 id, model
 from tt
 where cnt = (select max(cnt) from tt)) d
 union all
+--16.  Вывести отклонение в минутах суммы запланированного времени перелета от фактического по всем перелётам
 select 16 id,
 		round(sum(extract(epoch from actual_duration)/60 -
 		extract(epoch from (fv.scheduled_arrival -fv.scheduled_departure))/60))::text min
 from flights_v fv
-where status not in ('Cancelled','Scheduled','On Time', 'Delayed')
+where status = 'Arrived'
 union all
+--17.  Вывести города, в которые осуществлялся перелёт из Санкт-Петербурга 2016-09-13
 select * from (
 select distinct 17 id,arrival_city
 from flights_v fv
-where substring(actual_departure::text,1,10)= '2016-09-13'::text and departure_city ='Санкт-Петербург'
+where substring(actual_departure::text,1,10)= '2016-09-13'
+    and departure_city ='Санкт-Петербург'
+    and status = 'Arrived'
 order by 2) r
 union all
+--18.  Вывести перелёт с максимальной стоимость всех билетов
 select * from (
 with tt as (
-select flight_no, sum(amount) amt
+select flight_id::text flight_id, sum(amount) amt
 from flights_v fv
 join ticket_flights tf using(flight_id)
-group by flight_no)
+group by 1)
 
-select 18 id, flight_no res
+select 18 id, flight_id res
 from tt
 where amt = (select max(amt) from tt)
 )d
 union all
+--19.  Выбрать дни в которых было осуществлено минимальное количество перелётов
 select * from (
 with tt as (
 select substring(actual_departure::text,1,10) dd, count(1) cnt
@@ -229,6 +252,7 @@ select 19 id, dd res
 from tt
 where cnt = (select min(cnt) from tt))r
 union all
+--20.  Вывести среднее количество вылетов в день из Москвы за 09 месяц 2016 года
 select * from (
 with tt as (
 select substring(actual_departure::text,1,10) dd, count(1) cnt
@@ -238,10 +262,10 @@ where substring(actual_departure::text,1,7) = '2016-09'
 	and departure_city = 'Москва'
 group by 1
 )
-
 select 20 id, avg(cnt)::text res
 from tt ) r
 union all
+--21.  Вывести топ 5 городов у которых среднее время перелета до пункта назначения больше 3 часов
 select * from (
 with tt as (
 select departure_city , avg(extract(epoch from actual_duration)/60/60::float) hh
@@ -251,9 +275,9 @@ group by 1)
 ,rt as (
 select 21 id, departure_city res
 from tt
+where hh>3
 order by hh desc
 limit  5)
-
 select *
 from rt
 order by 2) r;
